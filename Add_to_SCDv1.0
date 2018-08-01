@@ -1,4 +1,4 @@
-# Description: This script is designed to add files, determined by the threatgrid
+# Description: This script is designed to add file hashes, determined by the threatgrid
 # appliance to be malicious, to the AMP for Endpoints Simple Custom Detection
 # List. We will query the ThreatGrid appliance for samples that have a threat score
 # of 100, we will then parse the results and obtain the SHA256 for each
