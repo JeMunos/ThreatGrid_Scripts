@@ -4,7 +4,7 @@
 # of 100, we will then parse the results and obtain the SHA256 for each
 # file. Finally we will use the AMP4E API to add the SHA's to a Simple Custom Detection
 # List.
-# NOTE: This script will only pull the top 100 results for the defined timeframe
+# NOTE: This script will only pull the top 100 most recent results for the defined timeframe
 ###########################
 # Author: Jesse Munos
 # Date: July 2018
