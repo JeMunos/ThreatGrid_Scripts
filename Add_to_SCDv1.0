@@ -1,0 +1,97 @@
+#!/bin/bash
+# Description: This script is designed to add files, determined by the threatgrid
+# appliance to be malicious, to the AMP for Endpoints Simple Custom Detection
+# List. We will query the ThreatGrid appliance for samples that have a threat score
+# of 100, we will then parse the results and obtain the SHA256 for each
+# file. Finally we will use the AMP4E API to add the SHA's to a Simple Custom Detection
+# List.
+# NOTE: This script will only pull the top 100 results for the defined timeframe
+###########################
+# Author: Jesse Munos
+# Date: July 2018
+
+import requests
+from sys import argv
+import re
+import json
+import datetime
+from datetime import timedelta
+
+
+tg_api_key = '<tg_API_key>' #This is the API key for an authorized user to query TG
+amp_api_key = '<amp_api_key' # AMP4E API key
+amp_client_id = '<amp_client_id>' # AMP4E Client ID
+tg_url = 'https://panacea.threatgrid.com/api/v2' #This is the public cloud url, this should be changed to the local private cloud URL
+amp_url = 'api.amp.cisco.com/v1' # This is the URL for interfacing with AMP for Endpoints API (region specific)
+score = 100     # This defines the threat score a sample must have to be returned
+delta = 5   # This defines how far back from the current time to query TG
+scd_name = '1test' # This is the name of SCD list in AMP for Endpoints
+
+# This function reaches out to ThreatGird and pulls the sample reports for
+# samples in the defined time range and with the defined score
+def get_samples(tg_url, score, tg_api_key, after_time, before_time):
+    url = '{}/search/submissions?q=analysis.threat_score:{}&advanced=true&after={}&before={}&api_key={}'.format(tg_url, score, before_time, after_time, tg_api_key)
+    print("URL: {}".format(url))
+    request = requests.get(url).json()
+    return request
+
+# This function returns current time in the proper format for the API
+def get_current_time():
+    return datetime.datetime.now().strftime("%Y-%m-%dT%H:%M:%SZ")
+
+# This function creates a time window by taking current time and subtracting a number of hours defined by delta
+def get_delta_time(delta):
+    return (datetime.datetime.now()-timedelta(hours=delta)).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+# This funciton writes to a file
+def write_to_file(data, filename):
+    out_file = open(filename, 'w')
+    out_file.write(json.dumps(data))
+    out_file.close()
+
+# This function parses the report data and builds an array out of the sha256's
+def get_sample_256(summary_report):
+        sha_list = []
+        count = summary_report['data']['current_item_count'] - 1
+        print(f"The count is {count}")
+        while(count >= 0):
+            # print(summary_report['data']['items'][count]['item']['sha256'])
+            sha_list.append(summary_report['data']['items'][count]['item']['sha256'])
+            # print(count)
+            count -= 1
+        return sha_list
+
+# This function gets the guid of the simple custom detection list
+def get_scd_guid(amp_client_id, amp_api_key, scd_name, amp_url):
+    amp_url = 'https://{}:{}@{}/file_lists/simple_custom_detections?name[]={}'.format(amp_client_id, amp_api_key, amp_url, scd_name)
+    request = requests.get(amp_url).json()
+    scd_guid = request['data'][0]['guid']
+    return scd_guid
+
+def post_to_scd(sha_list, scd_guid, amp_api_key, amp_client_id, amp_url):
+    count = len(sha_list) - 1
+    while(count >= 0):
+        print(f"The count is {count}")
+        url = 'https://{}:{}@{}/file_lists/{}/files/{}'.format(amp_client_id, amp_api_key, amp_url, scd_guid, sha_list[0])
+        print(f"The upload API call is: {url}")
+        print(f"Removing sha from list: {sha_list[0]}")
+        requests.post(url)
+        sha_list.pop(0)
+        count -= 1
+
+############################
+# Main Calls Start here
+############################
+
+# Pass the defined values and get a list of results
+results = get_samples(tg_url, score, tg_api_key, get_current_time(), get_delta_time(delta))
+# For now we will write the resulting json data to a file
+write_to_file(results, 'sample_data.json')
+# call get_sample_256 to parse the results and get an array with just the SHA256 of the samples
+sha_list = get_sample_256(results)
+# Print the array of SHA256 for us to peruse
+# print(f" Array of SHA256's: {shas}")
+# Check with AMP and get the GUID of the SCD we will be putting SHA256 into
+scd_guid = get_scd_guid(amp_client_id, amp_api_key, scd_name, amp_url)
+# Send upload the SHA list to the SCD list on AMP4E cloud
+post_to_scd(sha_list, scd_guid, amp_api_key, amp_client_id, amp_url)
